@@ -8,8 +8,23 @@ class EventHandle(object):
         return self
 
     def handleOnce(self, fn):
-        self.eventLite.on(self.event, fn)
+        self.eventLite.once(self.event, fn)
         return self
+
+    def handleOnCancelable(self, fn):
+        self.eventLite.on(self.event, fn)
+
+        def cancel():
+            self.handleRemove(fn)
+
+        return {"cancel": cancel, eventLite: self}
+
+    def handleOnceCancelable(self, fn):
+        def cancel():
+            self.handleRemove(fn)
+
+        self.eventLite.once(self.event, fn)
+        return {"cancel": cancel, eventLite: self}
 
     def handleEmit(self, *args):
         self.eventLite.emit(self.event, *args)
@@ -23,7 +38,8 @@ class EventHandle(object):
         return self.eventLite.connect(self.event, eventLite)
 
     def handlePipe(self, fn, follow):
-        return self.eventLite.pipe(self.event, fn)
+        self.eventLite.pipe(self.event, fn)
+        return self
 
 
 class EventLite(object):
@@ -38,6 +54,11 @@ class EventLite(object):
         else:
             map[event].add(fn)
 
+        return self
+
+    def handleOn(self, event, fn):
+        self.handleOn(event, fn)
+
         return self.handle(event)
 
     def once(self, event, fn):
@@ -47,20 +68,34 @@ class EventLite(object):
         else:
             map[event].add(fn)
 
+        return self
+
+    def handleOnce(self, event, fn):
+        self.once(event, fn)
+
         return self.handle(event)
 
     def emit(self, event, *args):
 
         dos = self.doMap.get(event)
+        doOnces = self.doOnceMap.get(event)
+
         if dos:
             for fn in dos:
+                if doOnces and fn in doOnces:
+                    del self.doOnceMap[event]
                 fn(*args)
 
-        doOnces = self.doOnceMap.get(event)
         if doOnces:
             for fn in doOnces:
                 fn(*args)
             del self.doOnceMap[event]
+
+        return self
+
+    def handleEmit(self, event, *args):
+
+        self.emit(event, *args)
 
         return self.handle(event)
 
@@ -114,7 +149,15 @@ class EventLite(object):
             self.emit(follow, value)
 
         self.on(event, piper)
-        return self.handle(follow)
+        return self
+
+    def handlePipe(self, event, fn, follow):
+        def piper(*args):
+            value = fn(*args)
+            self.emit(follow, value)
+
+        self.on(event, piper)
+        return self.handle(event)
 
     def handle(self, event):
         # print(make)
